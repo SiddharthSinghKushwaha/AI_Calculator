@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-electron
+.vscode
+*.log
+.DS_Store
+release
+release-build
+release-new
+release-old
+_TRASH_*
