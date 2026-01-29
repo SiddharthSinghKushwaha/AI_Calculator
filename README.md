@@ -6,7 +6,7 @@ A professional-grade desktop calculator application built with Electron, React, 
 
 **No additional software is required.** You do **not** need Node.js installed to run this app.
 
-1. Download the installer: `Advanced Calculator Setup 1.0.0.exe`
+1. Download the installer: `Advanced Calculator Setup 1.0.1.exe`
 2. Run the installer.
    > ⚠️ **Note**: You may see a "Windows protected your PC" popup. This is normal for new apps that aren't digitally signed.
    > - Click **More info**
@@ -42,12 +42,28 @@ If you want to modify the source code or build the app yourself, follow these st
 
 ## ✨ Features
 
-- **Modes**: Standard, Scientific, and Programmer.
-- **History**: Persistent history with search, pin, and delete.
-- **Memory**: Multiple memory slots.
-- **Scattered Keypad**: Optional randomized keypad for brain training.
-- **Real-time Calculation**: Instant results as you type.
-- **Theming**: Light/Dark mode support.
+### Core Functionality
+- **Modes**: Standard, Scientific, and Programmer
+- **History**: Persistent history with search, pin, and delete
+- **Memory**: Multiple memory slots
+- **Real-time Calculation**: Instant results as you type
+- **Theming**: Light/Dark mode support
+
+### New in v1.0.1 🎉
+
+- **📊 Indian Number Formatting**: Toggle between international (100,000) and Indian (1,00,000) formats
+- **👻 Ghost Mode**: Semi-transparent window (90% opacity) that stays always-on-top for overlay calculations
+- **🔢 Smart Variables**: Define and use variables in calculations
+  - Syntax: `Tax = 200` then use `5000 - Tax` → Result: 4800
+  - Variables persist across sessions
+- **📁 Session Management**: Group calculations into named sessions
+  - Create, rename, and switch between sessions
+  - Each session has its own history and variables
+- **💾 Complete Data Persistence**: All data stored forever in SQLite database
+  - Sessions, variables, history, and settings all persist across app restarts
+
+### Additional Features
+- **Scattered Keypad**: Optional randomized keypad for brain training
 
 ## Keyboard Shortcuts
 
@@ -70,4 +86,3 @@ If you want to modify the source code or build the app yourself, follow these st
 ## License
 
 MIT License
-

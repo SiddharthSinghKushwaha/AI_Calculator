@@ -1,14 +1,25 @@
 import { create, all, MathJsInstance } from 'mathjs'
+import { VariableManager } from './VariableManager'
+
+export interface EvaluationResult {
+    result: string
+    variableAssignment?: { name: string; value: string }
+}
 
 export class CalculationEngine {
     private math: MathJsInstance
     private mode: 'standard' | 'scientific' | 'programmer' = 'standard'
+    private variableManager: VariableManager | null = null
 
     constructor() {
         this.math = create(all, {
             number: 'BigNumber',
             precision: 64
         })
+    }
+
+    setVariableManager(manager: VariableManager): void {
+        this.variableManager = manager
     }
 
     setMode(mode: 'standard' | 'scientific' | 'programmer'): void {
@@ -19,10 +30,53 @@ export class CalculationEngine {
         return this.mode
     }
 
+    /**
+     * Evaluate expression with variable support
+     * Returns both result and potential variable assignment
+     */
+    evaluateExpression(expression: string): EvaluationResult {
+        try {
+            // Check if this is a variable assignment (name = value or name=value)
+            const assignmentMatch = expression.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/)
+
+            if (assignmentMatch) {
+                const varName = assignmentMatch[1].trim()
+                const valueExpr = assignmentMatch[2].trim()
+
+                // Evaluate the right side of the assignment
+                const valueResult = this.evaluate(valueExpr)
+
+                // Store in variable manager if available
+                if (this.variableManager) {
+                    this.variableManager.setVariable(varName, valueResult)
+                }
+
+                return {
+                    result: valueResult,
+                    variableAssignment: { name: varName, value: valueResult }
+                }
+            }
+
+            // Not an assignment, just evaluate normally
+            const result = this.evaluate(expression)
+            return { result }
+        } catch (error) {
+            if (error instanceof Error) {
+                throw new Error(this.formatError(error.message))
+            }
+            throw new Error('Invalid expression')
+        }
+    }
+
     evaluate(expression: string): string {
         try {
             // Clean and validate expression
-            const cleaned = this.preprocessExpression(expression)
+            let cleaned = this.preprocessExpression(expression)
+
+            // Replace variables with their values if variable manager is available
+            if (this.variableManager) {
+                cleaned = this.replaceVariables(cleaned)
+            }
 
             // Evaluate based on mode
             let result: any
@@ -41,6 +95,25 @@ export class CalculationEngine {
             }
             throw new Error('Invalid expression')
         }
+    }
+
+    private replaceVariables(expr: string): string {
+        if (!this.variableManager) return expr
+
+        let result = expr
+        const variables = this.variableManager.getAllVariables()
+
+        // Sort variables by name length (descending) to replace longer names first
+        // This prevents partial replacements (e.g., 'rate' before 'r')
+        variables.sort((a, b) => b.name.length - a.name.length)
+
+        for (const variable of variables) {
+            // Use word boundary to ensure we only replace whole variable names
+            const regex = new RegExp(`\\b${variable.name}\\b`, 'g')
+            result = result.replace(regex, variable.value)
+        }
+
+        return result
     }
 
     private preprocessExpression(expr: string): string {

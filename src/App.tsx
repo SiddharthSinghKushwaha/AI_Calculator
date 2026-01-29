@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback } from 'react'
 import { CalculationEngine } from './engine/CalculationEngine'
 import { MemoryManager } from './engine/MemoryManager'
-import { CalculationMode, Theme, HistoryEntry } from './types'
+import { VariableManager } from './engine/VariableManager'
+import { SessionManager } from './engine/SessionManager'
+import { CalculationMode, Theme, HistoryEntry, Session, Variable, NumberFormat } from './types'
 import DisplayPanel from './components/DisplayPanel'
 import InputPanel from './components/InputPanel'
 import HistoryPanel from './components/HistoryPanel'
 import SettingsPanel from './components/SettingsPanel'
+import SessionSelector from './components/SessionSelector'
+import VariablesPanel from './components/VariablesPanel'
 
 function App() {
     const [expression, setExpression] = useState<string>('')
@@ -13,18 +17,34 @@ function App() {
     const [mode, setMode] = useState<CalculationMode>('standard')
     const [theme, setTheme] = useState<Theme>('system')
     const [scatteredKeypad, setScatteredKeypad] = useState<boolean>(false)
+    const [numberFormat, setNumberFormat] = useState<NumberFormat>('international')
+    const [ghostMode, setGhostMode] = useState<boolean>(false)
     const [history, setHistory] = useState<HistoryEntry[]>([])
+    const [sessions, setSessions] = useState<Session[]>([])
+    const [variables, setVariables] = useState<Variable[]>([])
     const [showSettings, setShowSettings] = useState<boolean>(false)
     const [engine] = useState(() => new CalculationEngine())
     const [memoryManager] = useState(() => new MemoryManager())
+    const [variableManager] = useState(() => new VariableManager())
+    const [sessionManager] = useState(() => new SessionManager())
 
     const [isNewCalculation, setIsNewCalculation] = useState<boolean>(false)
 
-    // Load settings on startup
+    // Load settings and data on startup
     useEffect(() => {
+        engine.setVariableManager(variableManager)
         loadSettings()
-        loadHistory()
+        loadSessions()
     }, [])
+
+    // Load session data when current session changes
+    useEffect(() => {
+        const currentSessionId = sessionManager.getCurrentSessionId()
+        if (currentSessionId) {
+            loadHistory()
+            loadVariables()
+        }
+    }, [sessionManager.getCurrentSessionId()])
 
     // Apply theme
     useEffect(() => {
@@ -61,13 +81,50 @@ function App() {
             setTheme((settings.theme as Theme) || 'system')
             setScatteredKeypad(settings.scatteredKeypad === 'true')
             setMode((settings.calculationMode as CalculationMode) || 'standard')
+            setNumberFormat((settings.numberFormat as NumberFormat) || 'international')
+            const ghostEnabled = settings.ghostMode === 'true'
+            setGhostMode(ghostEnabled)
+            if (window.electronAPI.setGhostMode) {
+                await window.electronAPI.setGhostMode(ghostEnabled)
+            }
+        }
+    }
+
+    const loadSessions = async () => {
+        if (window.electronAPI) {
+            const sessionsData = await window.electronAPI.getSessions()
+            console.log('Sessions loaded:', sessionsData)
+            setSessions(sessionsData)
+            sessionManager.loadSessions(sessionsData)
+
+            // Load history and variables for the current session
+            const currentSessionId = sessionManager.getCurrentSessionId()
+            console.log('Current session after load:', currentSessionId)
+            if (currentSessionId) {
+                await loadHistory()
+                await loadVariables()
+            }
         }
     }
 
     const loadHistory = async () => {
         if (window.electronAPI) {
-            const historyData = await window.electronAPI.getHistory(100, 0)
+            const currentSessionId = sessionManager.getCurrentSessionId()
+            console.log('Loading history for session:', currentSessionId)
+            const historyData = await window.electronAPI.getHistory(100, 0, currentSessionId || undefined)
+            console.log('History data received:', historyData.length, 'entries')
             setHistory(historyData)
+        }
+    }
+
+    const loadVariables = async () => {
+        if (window.electronAPI) {
+            const currentSessionId = sessionManager.getCurrentSessionId()
+            if (currentSessionId) {
+                const variablesData = await window.electronAPI.getVariables(currentSessionId)
+                setVariables(variablesData)
+                variableManager.loadVariables(variablesData)
+            }
         }
     }
 
@@ -138,27 +195,123 @@ function App() {
 
         try {
             engine.setMode(mode)
-            const calculatedResult = engine.evaluate(expression)
-            setResult(calculatedResult)
-            setIsNewCalculation(true)
 
-            // Save to history
-            if (window.electronAPI) {
-                const entry: HistoryEntry = {
-                    expression,
-                    result: calculatedResult,
-                    mode,
-                    timestamp: Date.now(),
-                    is_pinned: 0,
+            // Check if expression has multiple lines
+            const lines = expression.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+
+            if (lines.length > 1) {
+                // Process each line separately
+                let lastResult = '0'
+                const variableAssignments: { name: string; value: string }[] = []
+
+                for (const line of lines) {
+                    const evaluation = engine.evaluateExpression(line)
+                    lastResult = evaluation.result
+
+                    // Collect variable assignments
+                    if (evaluation.variableAssignment) {
+                        variableAssignments.push(evaluation.variableAssignment)
+
+                        // Save to database
+                        const sessionId = sessionManager.getCurrentSessionId()
+                        if (sessionId && window.electronAPI) {
+                            await window.electronAPI.setVariable(
+                                sessionId,
+                                evaluation.variableAssignment.name,
+                                evaluation.variableAssignment.value
+                            )
+                        }
+                    }
                 }
-                await window.electronAPI.addHistory(entry)
-                loadHistory()
+
+                // Update UI with last result
+                setResult(lastResult)
+                setIsNewCalculation(true)
+
+                // Reload variables if any were created
+                if (variableAssignments.length > 0) {
+                    await loadVariables()
+                }
+
+                // Save to history
+                if (window.electronAPI) {
+                    const sessionId = sessionManager.getCurrentSessionId()
+                    const recentHistory = await window.electronAPI.getHistory(1, 0, sessionId || undefined)
+                    const isDuplicate = recentHistory.length > 0 &&
+                        recentHistory[0].expression === expression &&
+                        recentHistory[0].result === lastResult
+
+                    if (!isDuplicate) {
+                        const entry: HistoryEntry = {
+                            expression,
+                            result: lastResult,
+                            mode,
+                            timestamp: Date.now(),
+                            is_pinned: 0,
+                            session_id: sessionId || undefined,
+                        }
+                        await window.electronAPI.addHistory(entry)
+                    }
+
+                    await loadHistory()
+                }
+            } else {
+                // Single line - process normally
+                const evaluation = engine.evaluateExpression(expression)
+                setResult(evaluation.result)
+                setIsNewCalculation(true)
+
+                // If this was a variable assignment, save it
+                if (evaluation.variableAssignment && window.electronAPI) {
+                    const sessionId = sessionManager.getCurrentSessionId()
+                    if (sessionId) {
+                        await window.electronAPI.setVariable(
+                            sessionId,
+                            evaluation.variableAssignment.name,
+                            evaluation.variableAssignment.value
+                        )
+                        await loadVariables()
+                    }
+                }
+
+                // Save to history (avoid duplicates)
+                if (window.electronAPI) {
+                    const sessionId = sessionManager.getCurrentSessionId()
+
+                    // Check if the last history entry is the same
+                    const recentHistory = await window.electronAPI.getHistory(1, 0, sessionId || undefined)
+                    const isDuplicate = recentHistory.length > 0 &&
+                        recentHistory[0].expression === expression &&
+                        recentHistory[0].result === evaluation.result
+
+                    if (!isDuplicate) {
+                        const entry: HistoryEntry = {
+                            expression,
+                            result: evaluation.result,
+                            mode,
+                            timestamp: Date.now(),
+                            is_pinned: 0,
+                            session_id: sessionId || undefined,
+                        }
+                        await window.electronAPI.addHistory(entry)
+                    }
+
+                    // Always reload history to show updates
+                    await loadHistory()
+                }
             }
         } catch (error) {
-            setResult(error instanceof Error ? error.message : 'Error')
+            let errorMessage = error instanceof Error ? error.message : 'Error'
+
+            // Check if it's a variable-related error
+            if (errorMessage.includes('undefined') || errorMessage.includes('not defined')) {
+                errorMessage = `Invalid expression. Need help with variables?\n\nVariable Syntax:\n• Define: variableName = value\n• Example: Tax = 200\n• Use: 5000 - Tax\n\nVariable names must start with a letter or underscore.`
+            }
+
+            setResult(errorMessage)
             setIsNewCalculation(true)
         }
-    }, [expression, mode, engine])
+    }, [expression, mode, engine, sessionManager, loadHistory, loadVariables])
 
     const handleModeChange = async (newMode: CalculationMode) => {
         setMode(newMode)
@@ -255,10 +408,16 @@ function App() {
             else if (e.key === '.' && !isInputActive) {
                 handleInput('.')
             }
-            // Enter to calculate
-            else if (e.key === 'Enter') {
-                e.preventDefault()
-                handleCalculate()
+            // Enter to calculate (but allow Shift+Enter in textarea for multiline)
+            else if (e.key === 'Enter' && !e.shiftKey) {
+                // If in textarea, let Shift+Enter add newlines
+                if (isInputActive) {
+                    e.preventDefault()
+                    handleCalculate()
+                } else {
+                    e.preventDefault()
+                    handleCalculate()
+                }
             }
             // Backspace
             else if (e.key === 'Backspace') {
@@ -283,6 +442,80 @@ function App() {
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [expression, result, handleCalculate, isNewCalculation])
 
+    // Number format handler
+    const handleNumberFormatChange = async (format: NumberFormat) => {
+        setNumberFormat(format)
+        if (window.electronAPI) {
+            await window.electronAPI.setSetting('numberFormat', format)
+        }
+    }
+
+    // Ghost mode handler
+    const handleGhostModeToggle = async () => {
+        const newGhostMode = !ghostMode
+        setGhostMode(newGhostMode)
+        if (window.electronAPI) {
+            await window.electronAPI.setGhostMode(newGhostMode)
+            await window.electronAPI.setSetting('ghostMode', newGhostMode.toString())
+        }
+    }
+
+    // Session handlers
+    const handleSessionChange = async (sessionId: number) => {
+        sessionManager.setCurrentSessionId(sessionId)
+        await loadHistory()
+        await loadVariables()
+    }
+
+    const handleCreateSession = async (name: string) => {
+        if (window.electronAPI) {
+            const newId = await window.electronAPI.createSession(name)
+            await loadSessions()
+            if (newId) {
+                sessionManager.setCurrentSessionId(newId)
+                await loadHistory()
+                await loadVariables()
+            }
+        }
+    }
+
+    const handleRenameSession = async (id: number, newName: string) => {
+        if (window.electronAPI) {
+            await window.electronAPI.renameSession(id, newName)
+            await loadSessions()
+        }
+    }
+
+    const handleDeleteSession = async (id: number) => {
+        if (window.electronAPI) {
+            const success = await window.electronAPI.deleteSession(id)
+            if (success) {
+                await loadSessions()
+                const currentId = sessionManager.getCurrentSessionId()
+                if (currentId) {
+                    await loadHistory()
+                    await loadVariables()
+                }
+            }
+        }
+    }
+
+    // Variable handlers
+    const handleDeleteVariable = async (id: number) => {
+        if (window.electronAPI) {
+            await window.electronAPI.deleteVariable(id)
+            await loadVariables()
+        }
+    }
+
+    const handleClearVariables = async () => {
+        const sessionId = sessionManager.getCurrentSessionId()
+        if (window.electronAPI && sessionId) {
+            await window.electronAPI.clearVariables(sessionId)
+            await loadVariables()
+        }
+    }
+
     return (
         <div className="flex h-screen bg-[var(--bg-primary)]">
             {/* History Panel */}
@@ -300,6 +533,16 @@ function App() {
                         Advanced Calculator
                     </h1>
                     <div className="flex items-center gap-4">
+                        {/* Session Selector */}
+                        <SessionSelector
+                            sessions={sessions}
+                            currentSessionId={sessionManager.getCurrentSessionId()}
+                            onSessionChange={handleSessionChange}
+                            onCreateSession={handleCreateSession}
+                            onRenameSession={handleRenameSession}
+                            onDeleteSession={handleDeleteSession}
+                        />
+
                         {/* Mode Selector */}
                         <div className="flex gap-2">
                             {(['standard', 'scientific', 'programmer'] as CalculationMode[]).map((m) => (
@@ -315,6 +558,15 @@ function App() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Ghost Mode Button */}
+                        <button
+                            onClick={handleGhostModeToggle}
+                            className={`p-2 rounded hover:bg-[var(--button-hover)] transition-colors ${ghostMode ? 'text-[var(--accent)]' : 'text-[var(--text-primary)]'}`}
+                            title={`Ghost Mode ${ghostMode ? 'ON' : 'OFF'}`}
+                        >
+                            👻
+                        </button>
 
                         {/* Settings Button */}
                         <button
@@ -333,8 +585,10 @@ function App() {
                     result={result}
                     mode={mode}
                     hasMemory={memoryManager.hasMemory()}
+                    numberFormat={numberFormat}
                     onPaste={handlePaste}
                     onChange={handleExpressionChange}
+                    onNumberFormatChange={handleNumberFormatChange}
                 />
 
                 {/* Input Panel */}
@@ -350,6 +604,15 @@ function App() {
                     onMemoryRecall={handleMemoryRecall}
                     onMemoryClear={handleMemoryClear}
                     onMemoryStore={handleMemoryStore}
+                />
+            </div>
+
+            {/* Variables Panel */}
+            <div className="w-80 border-l border-[var(--border-color)] bg-[var(--bg-secondary)]">
+                <VariablesPanel
+                    variables={variables}
+                    onDeleteVariable={handleDeleteVariable}
+                    onClearAll={handleClearVariables}
                 />
             </div>
 

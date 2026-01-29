@@ -1,6 +1,6 @@
 {
   "name": "advanced-calculator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Professional-grade cross-platform calculator with history and advanced features",
   "main": "dist-electron/index.js",
   "author": "Siddharth",

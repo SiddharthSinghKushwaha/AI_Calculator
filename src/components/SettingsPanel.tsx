@@ -104,7 +104,7 @@ export default function SettingsPanel({
                                 Advanced Calculator
                             </div>
                             <div className="text-sm text-[var(--text-secondary)]">
-                                Version 1.0.0
+                                Version 1.0.1
                             </div>
                             <div className="text-sm text-[var(--text-secondary)] mt-2">
                                 A professional-grade calculator with persistent history and advanced features.

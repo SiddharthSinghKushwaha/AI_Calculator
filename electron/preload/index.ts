@@ -7,6 +7,7 @@ interface HistoryEntry {
     mode: 'standard' | 'scientific' | 'programmer'
     timestamp: number
     is_pinned: number
+    session_id?: number
     created_at?: string
 }
 
@@ -15,7 +16,7 @@ interface HistoryEntry {
 contextBridge.exposeInMainWorld('electronAPI', {
     // History API
     addHistory: (entry: HistoryEntry) => ipcRenderer.invoke('history:add', entry),
-    getHistory: (limit: number, offset: number) => ipcRenderer.invoke('history:get', limit, offset),
+    getHistory: (limit: number, offset: number, sessionId?: number) => ipcRenderer.invoke('history:get', limit, offset, sessionId),
     searchHistory: (query: string, limit: number) => ipcRenderer.invoke('history:search', query, limit),
     togglePin: (id: number) => ipcRenderer.invoke('history:togglePin', id),
     deleteHistory: (id: number) => ipcRenderer.invoke('history:delete', id),
@@ -31,4 +32,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getMemory: (slot: string) => ipcRenderer.invoke('memory:get', slot),
     clearMemory: (slot: string) => ipcRenderer.invoke('memory:clear', slot),
     getAllMemory: () => ipcRenderer.invoke('memory:getAll'),
+
+    // Session API
+    createSession: (name: string) => ipcRenderer.invoke('session:create', name),
+    getSessions: () => ipcRenderer.invoke('session:getAll'),
+    renameSession: (id: number, newName: string) => ipcRenderer.invoke('session:rename', id, newName),
+    deleteSession: (id: number) => ipcRenderer.invoke('session:delete', id),
+
+    // Variable API
+    setVariable: (sessionId: number, name: string, value: string) => ipcRenderer.invoke('variable:set', sessionId, name, value),
+    getVariables: (sessionId: number) => ipcRenderer.invoke('variable:getAll', sessionId),
+    deleteVariable: (id: number) => ipcRenderer.invoke('variable:delete', id),
+    clearVariables: (sessionId: number) => ipcRenderer.invoke('variable:clear', sessionId),
+
+    // Ghost Mode API
+    setGhostMode: (enabled: boolean) => ipcRenderer.invoke('ghostMode:set', enabled),
 })

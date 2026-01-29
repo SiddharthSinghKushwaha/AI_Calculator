@@ -49,15 +49,23 @@ function createWindow() {
 
 app.whenReady().then(async () => {
     try {
+        console.log('App ready, initializing database...')
+
         // Initialize database
         dbManager = new DatabaseManager(app.getPath('userData'))
         await dbManager.initialize()
 
+        console.log('Database initialized successfully')
+
         // Register IPC handlers
         registerIpcHandlers(dbManager)
 
+        console.log('IPC handlers registered')
+
         // Create window
         createWindow()
+
+        console.log('Window created')
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) {
@@ -65,6 +73,7 @@ app.whenReady().then(async () => {
             }
         })
     } catch (error) {
+        console.error('Initialization error:', error)
         const { dialog } = require('electron')
         dialog.showErrorBox('Initialization Error', `Failed to initialize application:\n${error}`)
         app.quit()

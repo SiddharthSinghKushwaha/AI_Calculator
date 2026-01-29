@@ -1,4 +1,5 @@
-import { CalculationMode } from '../types'
+import { CalculationMode, NumberFormat } from '../types'
+import { NumberFormatter } from '../utils/NumberFormatter'
 import { useState } from 'react'
 
 interface DisplayPanelProps {
@@ -6,12 +7,16 @@ interface DisplayPanelProps {
     result: string
     mode: CalculationMode
     hasMemory: boolean
+    numberFormat: NumberFormat
     onPaste?: (text: string) => void
     onChange?: (value: string) => void
+    onNumberFormatChange?: (format: NumberFormat) => void
 }
 
-export default function DisplayPanel({ expression, result, mode, hasMemory, onPaste, onChange }: DisplayPanelProps) {
+export default function DisplayPanel({ expression, result, mode, hasMemory, numberFormat, onPaste, onChange, onNumberFormatChange }: DisplayPanelProps) {
     const [copied, setCopied] = useState(false)
+
+    const formattedResult = NumberFormatter.format(result, numberFormat)
 
     const handleCopy = async () => {
         try {
@@ -48,7 +53,15 @@ export default function DisplayPanel({ expression, result, mode, hasMemory, onPa
                                 M
                             </div>
                         )}
-                        {/* Copy/Paste Buttons */}
+                        {onNumberFormatChange && (
+                            <button
+                                onClick={() => onNumberFormatChange(numberFormat === 'international' ? 'indian' : 'international')}
+                                className="px-3 py-1 text-xs rounded bg-[var(--button-bg)] hover:bg-[var(--button-hover)] text-[var(--text-primary)] border border-[var(--border-color)] transition-colors"
+                                title={`Switch to ${numberFormat === 'international' ? 'Indian' : 'International'} format`}
+                            >
+                                {numberFormat === 'international' ? '🌍 Int' : '🇮🇳 IN'}
+                            </button>
+                        )}
                         <button
                             onClick={handlePaste}
                             className="px-3 py-1 text-xs rounded bg-[var(--button-bg)] hover:bg-[var(--button-hover)] text-[var(--text-primary)] border border-[var(--border-color)] transition-colors"
@@ -68,19 +81,30 @@ export default function DisplayPanel({ expression, result, mode, hasMemory, onPa
 
                 {/* Expression Display */}
                 <div className="min-h-[3rem] mb-2">
-                    <input
-                        type="text"
+                    <textarea
                         value={expression}
                         onChange={(e) => onChange && onChange(e.target.value)}
-                        className="w-full text-2xl text-[var(--text-secondary)] font-mono bg-transparent border-none focus:outline-none text-right"
+                        onKeyDown={(e) => {
+                            // Prevent default Enter behavior - let parent handle it
+                            // Shift+Enter will add a newline automatically
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault()
+                            }
+                        }}
+                        className="w-full text-2xl text-[var(--text-secondary)] font-mono bg-transparent border-none focus:outline-none text-right resize-none overflow-hidden"
                         placeholder="0"
+                        rows={expression.includes('\n') ? expression.split('\n').length : 1}
+                        style={{ minHeight: '3rem' }}
                     />
+                    <div className="text-xs text-[var(--text-secondary)] mt-1 text-right opacity-70">
+                        Shift+Enter for multiple lines
+                    </div>
                 </div>
 
                 {/* Result Display */}
                 <div className="min-h-[4rem]">
                     <div className="text-5xl font-bold text-[var(--text-primary)] font-mono break-all text-right">
-                        {result}
+                        {formattedResult}
                     </div>
                 </div>
             </div>

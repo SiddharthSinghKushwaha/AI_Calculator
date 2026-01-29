@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { HistoryEntry } from '../types'
 
 interface HistoryPanelProps {
@@ -10,6 +10,13 @@ interface HistoryPanelProps {
 export default function HistoryPanel({ history, onHistoryClick, onRefresh }: HistoryPanelProps) {
     const [searchQuery, setSearchQuery] = useState('')
     const [filteredHistory, setFilteredHistory] = useState<HistoryEntry[]>(history)
+
+    // Update filteredHistory when history prop changes
+    useEffect(() => {
+        if (!searchQuery) {
+            setFilteredHistory(history)
+        }
+    }, [history, searchQuery])
 
     const handleSearch = async (query: string) => {
         setSearchQuery(query)
