@@ -86,3 +86,5 @@ If you want to modify the source code or build the app yourself, follow these st
 ## License
 
 MIT License
+
+# Last Date of Update: 03-02-2026
